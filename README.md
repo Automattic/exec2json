@@ -1,7 +1,11 @@
 # exec2json
 
+```bash
+exec2json /bin/bash -c 'echo this is my stdout; echo that is my stderr 1>&2' | jq
 ```
-$ exec2json /bin/bash -c 'echo this is my stdout; echo that is my stderr 1>&2' | jq
+Outputs:
+
+```json 
 {
   "command": [
     "/bin/bash",
