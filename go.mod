@@ -1,3 +1,3 @@
 module github.com/Automattic/exec2json
 
-go 1.22
+go 1.19
