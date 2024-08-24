@@ -19,71 +19,74 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"time"
 )
 
-func main() {
-	if len(os.Args) < 2 {
-		log.Fatal("You must supply a command to execute")
-	}
-	command := exec.Command(os.Args[1], os.Args[2:]...)
+// CommandResult represents the result of executing a command
+type CommandResult struct {
+	Command []string  `json:"command"`
+	Stdout  string    `json:"stdout"`
+	Stderr  string    `json:"stderr"`
+	Status  int       `json:"status"`
+	Took    float64   `json:"took"`
+}
 
+func executeCommand(args []string) (*CommandResult, error) {
+	if len(args) < 1 {
+		return nil, fmt.Errorf("you must supply a command to execute")
+	}
+	command := exec.Command(args[0], args[1:]...)
 	stdin, err := command.StdinPipe()
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to create stdin pipe: %w", err)
 	}
-
 	stderr, err := command.StderrPipe()
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
-
 	stdout, err := command.StdoutPipe()
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
-
 	startTime := time.Now()
-
 	go func() {
 		defer stdin.Close()
 		io.Copy(stdin, os.Stdin)
 	}()
-
 	err = command.Start()
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to start command: %w", err)
 	}
-
 	outString, err := io.ReadAll(stdout)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to read stdout: %w", err)
 	}
 	errString, err := io.ReadAll(stderr)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to read stderr: %w", err)
 	}
-
-	if err := command.Wait(); err != nil {
-		var exitError *exec.ExitError
-		if !errors.As(err, &exitError) {
-			panic(err)
-		}
-	}
+	err = command.Wait()
 	took := time.Now().Sub(startTime).Seconds()
+	result := &CommandResult{
+		Command: args,
+		Stdout:  string(outString),
+		Stderr:  string(errString),
+		Status:  command.ProcessState.ExitCode(),
+		Took:    took,
+	}
+	return result, err
+}
 
-	json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
-		"command": os.Args[1:],
-		"stdout":  string(outString),
-		"stderr":  string(errString),
-		"status":  command.ProcessState.ExitCode(),
-		"took":    took,
-	})
-
-	os.Exit(command.ProcessState.ExitCode())
+func main() {
+	result, err := executeCommand(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	json.NewEncoder(os.Stdout).Encode(result)
+	os.Exit(result.Status)
 }
